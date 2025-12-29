@@ -1,25 +1,38 @@
-// sgp/Internal/handler/consulta_handler.go
-
 package handler
 
 import (
+	"context"
 	"encoding/json"
-	"log" // MODIFICADO: Garantir que o pacote de log está sendo usado
+	"log"
 	"net/http"
 	"sgp/Internal/model"
 	"sgp/Internal/repository"
+	"sgp/Internal/service" // Novo import para o serviço de e-mail
 	"time"
-    "context"
 )
 
 const Timeout = 5 * time.Second
 
 type ConsultaHandler struct {
-	Repo repository.ConsultaRepository
+	Repo          repository.ConsultaRepository
+	AlunoRepo     repository.AlunoRepository     // Dependência adicionada
+	PsicologoRepo repository.PsicologoRepository // Dependência adicionada
+	EmailService  *service.EmailService          // Dependência adicionada
 }
 
-func NewConsultaHandler(repo repository.ConsultaRepository) *ConsultaHandler {
-	return &ConsultaHandler{Repo: repo}
+// NewConsultaHandler atualizado com as novas dependências
+func NewConsultaHandler(
+	repo repository.ConsultaRepository,
+	alunoRepo repository.AlunoRepository,
+	psicologoRepo repository.PsicologoRepository,
+	emailService *service.EmailService,
+) *ConsultaHandler {
+	return &ConsultaHandler{
+		Repo:          repo,
+		AlunoRepo:     alunoRepo,
+		PsicologoRepo: psicologoRepo,
+		EmailService:  emailService,
+	}
 }
 
 func (h *ConsultaHandler) HandlerAgendarConsulta(w http.ResponseWriter, r *http.Request) {
@@ -41,8 +54,7 @@ func (h *ConsultaHandler) HandlerAgendarConsulta(w http.ResponseWriter, r *http.
 
 	ctx, cancel := context.WithTimeout(r.Context(), Timeout)
 	defer cancel()
-	
-	// A lógica principal agora está no repositório, dentro de uma transação.
+
 	consulta := model.Consulta{
 		AlunoID:   payload.AlunoID,
 		HorarioID: payload.HorarioID,
@@ -55,23 +67,49 @@ func (h *ConsultaHandler) HandlerAgendarConsulta(w http.ResponseWriter, r *http.
 		return
 	}
 
+	// --- ENVIO DE EMAIL (ASSÍNCRONO) ---
+	go func() {
+		// Contexto independente da requisição HTTP
+		bgCtx := context.Background()
+
+		// Busca dados completos para montar o e-mail
+		aluno, errA := h.AlunoRepo.BuscarAlunoPorID(bgCtx, novaConsulta.AlunoID)
+		psico, errP := h.PsicologoRepo.BuscarPsicologoPorID(bgCtx, novaConsulta.PsicologoID)
+
+		if errA == nil && errP == nil {
+			dataFormatada := novaConsulta.Inicio.Format("02/01/2006 às 15:04")
+
+			// Dispara o e-mail
+			errEmail := h.EmailService.EnviarNotificacaoAgendamento(
+				aluno.Email,
+				aluno.Nome,
+				psico.Nome,
+				dataFormatada,
+			)
+			if errEmail != nil {
+				log.Printf("ERRO ao enviar email (Resend): %v", errEmail)
+			}
+		} else {
+			log.Printf("ERRO ao buscar dados para email de agendamento: AlunoErr: %v, PsicoErr: %v", errA, errP)
+		}
+	}()
+	// -----------------------------------
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(novaConsulta)
 }
 
 func (h *ConsultaHandler) HandlerListarConsultasPorPsicologo(w http.ResponseWriter, r *http.Request) {
-    // MODIFICADO: Adicionado log de rastreamento no início
 	log.Println("--- INÍCIO: HandlerListarConsultasPorPsicologo foi chamado ---")
-    
+
 	psicologoId := r.URL.Query().Get("psicologoId")
 
 	if psicologoId == "" {
 		http.Error(w, "o psicologoId é obrigatorio", http.StatusBadRequest)
 		return
 	}
-    // MODIFICADO: Adicionado log para ver o ID recebido
-    log.Printf("Buscando consultas para o psicologoId: %s", psicologoId)
+	log.Printf("Buscando consultas para o psicologoId: %s", psicologoId)
 
 	statusFiltro := r.URL.Query().Get("status")
 
@@ -81,7 +119,6 @@ func (h *ConsultaHandler) HandlerListarConsultasPorPsicologo(w http.ResponseWrit
 	consultas, err := h.Repo.ListarConsultasPorPsicologo(ctx, psicologoId, statusFiltro)
 
 	if err != nil {
-        // MODIFICADO: Adicionado log para registrar o erro no terminal
 		log.Printf("ERRO ao listar consultas por psicologo: %v", err)
 		http.Error(w, "erro ao listar consultas por psicologo", http.StatusInternalServerError)
 		return
@@ -90,13 +127,10 @@ func (h *ConsultaHandler) HandlerListarConsultasPorPsicologo(w http.ResponseWrit
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(consultas)
-    // MODIFICADO: Adicionado log de rastreamento no fim
-    log.Println("--- FIM: HandlerListarConsultasPorPsicologo finalizado com sucesso ---")
+	log.Println("--- FIM: HandlerListarConsultasPorPsicologo finalizado com sucesso ---")
 }
 
-
 func (h *ConsultaHandler) HandlerListarConsultasPorAluno(w http.ResponseWriter, r *http.Request) {
-	// MODIFICADO: Log de início do handler
 	log.Println("--- INÍCIO: HandlerListarConsultasPorAluno foi chamado ---")
 
 	alunoId := r.URL.Query().Get("alunoId")
@@ -105,7 +139,6 @@ func (h *ConsultaHandler) HandlerListarConsultasPorAluno(w http.ResponseWriter, 
 		return
 	}
 
-	// MODIFICADO: Log do alunoId recebido
 	log.Printf("Buscando consultas para o alunoId: %s", alunoId)
 
 	ctx, cancel := context.WithTimeout(r.Context(), Timeout)
@@ -122,10 +155,8 @@ func (h *ConsultaHandler) HandlerListarConsultasPorAluno(w http.ResponseWriter, 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(consultas)
 
-	// MODIFICADO: Log de finalização
 	log.Println("--- FIM: HandlerListarConsultasPorAluno finalizado com sucesso ---")
 }
-
 
 func (h *ConsultaHandler) HandlerAtualizarStatusConsulta(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
@@ -153,12 +184,39 @@ func (h *ConsultaHandler) HandlerAtualizarStatusConsulta(w http.ResponseWriter, 
 	ctx, cancel := context.WithTimeout(r.Context(), Timeout)
 	defer cancel()
 
+	// 1. Atualiza no banco
 	if err := h.Repo.AtualizaStatusConsulta(ctx, id, payload.Status); err != nil {
-        // MODIFICADO: Adicionado log para registrar o erro no terminal
 		log.Printf("ERRO ao atualizar status da consulta: %v", err)
 		http.Error(w, "erro ao atualizar o status da consulta", http.StatusInternalServerError)
-        return // MODIFICADO: Adicionado 'return' para parar a execução
+		return
 	}
+
+	// --- ENVIO DE EMAIL (ASSÍNCRONO) ---
+	go func() {
+		bgCtx := context.Background()
+
+		// Busca a consulta para saber quem é o aluno
+		consulta, err := h.Repo.BuscarConsultaPorID(bgCtx, id)
+		if err == nil {
+			// Busca os dados do aluno para pegar o e-mail
+			aluno, errA := h.AlunoRepo.BuscarAlunoPorID(bgCtx, consulta.AlunoID)
+			if errA == nil {
+				errEmail := h.EmailService.EnviarNotificacaoAtualizacaoStatus(
+					aluno.Email,
+					aluno.Nome,
+					payload.Status,
+				)
+				if errEmail != nil {
+					log.Printf("ERRO ao enviar email de status (Resend): %v", errEmail)
+				}
+			} else {
+				log.Printf("ERRO ao buscar aluno para notificação de status: %v", errA)
+			}
+		} else {
+			log.Printf("ERRO ao buscar consulta para notificação de status: %v", err)
+		}
+	}()
+	// -----------------------------------
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "status da consulta atualizado com sucesso"})
@@ -175,7 +233,6 @@ func (h *ConsultaHandler) HandlerDeletarConsulta(w http.ResponseWriter, r *http.
 	defer cancel()
 
 	if err := h.Repo.DeletarConsulta(ctx, id); err != nil {
-        // MODIFICADO: Adicionado log para registrar o erro no terminal
 		log.Printf("ERRO ao deletar consulta: %v", err)
 		http.Error(w, "erro ao deletar consulta", http.StatusInternalServerError)
 		return

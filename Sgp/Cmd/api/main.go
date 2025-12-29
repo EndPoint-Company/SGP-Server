@@ -9,6 +9,7 @@ import (
 	"sgp/Internal/handler"
 	"sgp/Internal/middleware"
 	"sgp/Internal/repository"
+	"sgp/Internal/service"
 	"time"
 
 	firebase "firebase.google.com/go/v4"
@@ -21,7 +22,7 @@ import (
 const is_middleware_on = false
 
 func main() {
-	err := godotenv.Load("/home/marco/sgp-server/Sgp/Cmd/api/.env")
+	err := godotenv.Load("/home/marquin/home/servidor-sgp/SGP-Server/Sgp/Cmd/api/.env")
 	if err != nil {
 		log.Fatalf("Erro ao carregar o arquivo .env: %v", err)
 	}
@@ -49,6 +50,12 @@ func main() {
 	}
 	defer client.Close()
 
+
+	resendApiKey := os.Getenv("RESEND_API_KEY")
+	
+
+	emailService := service.NewEmailService(resendApiKey)
+
 	alunoRepo := repository.NewAlunoRepository(client)
 	psicologoRepo := repository.NewPsicologoRepository(client)
 	consultaRepo := repository.NewConsultaRepository(client)
@@ -56,7 +63,7 @@ func main() {
 
 	alunoHandler := handler.NewAlunoHandler(alunoRepo)
 	psicologoHandler := handler.NewPsicologoHandler(psicologoRepo)
-	consultaHandler := handler.NewConsultaHandler(consultaRepo)
+	consultaHandler := handler.NewConsultaHandler(consultaRepo, alunoRepo, psicologoRepo, emailService)
 	horarioHandler := handler.NewHorarioDisponivelHandler(horarioRepo)
 
 	mux := http.NewServeMux()
@@ -83,7 +90,7 @@ func main() {
 		mux.Handle("PATCH /consultas/{id}/status", authMiddleware.Verify(http.HandlerFunc(consultaHandler.HandlerAtualizarStatusConsulta)))
 		mux.Handle("DELETE /consultas/{id}", authMiddleware.Verify(http.HandlerFunc(consultaHandler.HandlerDeletarConsulta)))
 
-		mux.HandleFunc("POST /horarios", horarioHandler.HandlerCriarHorario) 
+		mux.HandleFunc("POST /horarios", horarioHandler.HandlerCriarHorario)
 		mux.HandleFunc("GET /horarios", horarioHandler.HandlerListarHorarios)
 		mux.HandleFunc("DELETE /horarios/{id}", horarioHandler.HandlerDeletarHorario)
 	} else {
@@ -108,7 +115,7 @@ func main() {
 		mux.HandleFunc("PATCH /consultas/{id}/status", consultaHandler.HandlerAtualizarStatusConsulta)
 		mux.HandleFunc("DELETE /consultas/{id}", consultaHandler.HandlerDeletarConsulta)
 
-		mux.HandleFunc("POST /horarios", horarioHandler.HandlerCriarHorario) 
+		mux.HandleFunc("POST /horarios", horarioHandler.HandlerCriarHorario)
 		mux.HandleFunc("GET /horarios", horarioHandler.HandlerListarHorarios)
 		mux.HandleFunc("DELETE /horarios/{id}", horarioHandler.HandlerDeletarHorario)
 	}

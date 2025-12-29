@@ -159,3 +159,16 @@ func (r *ConsultaRepositoryImpl) DeletarConsulta(ctx context.Context, id string)
 	}
 	return nil
 }
+
+func (r *ConsultaRepositoryImpl) BuscarConsultaPorID(ctx context.Context, id string) (*model.Consulta, error) {
+	doc, err := r.Client.Collection("Consultas").Doc(id).Get(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("consulta não encontrada: %w", err)
+	}
+	var consulta model.Consulta
+	if err := doc.DataTo(&consulta); err != nil {
+		return nil, err
+	}
+	consulta.ID = doc.Ref.ID
+	return &consulta, nil
+}

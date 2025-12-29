@@ -14,6 +14,7 @@ type ConsultaRepositoryMock struct {
 	ListarConsultasPorPsicologoFunc func(ctx context.Context, psicologoID string, statusFiltro string) ([]*model.Consulta, error)
 	ListarConsultasPorAlunoFunc     func(ctx context.Context, alunoID string) ([]*model.Consulta, error)
 	DeletarConsultaFunc             func(ctx context.Context, id string) error
+	BuscarConsultaPorIDFunc         func(ctx context.Context, id string) (*model.Consulta, error)
 }
 
 func (m *ConsultaRepositoryMock) AgendarConsulta(ctx context.Context, c model.Consulta) (*model.Consulta, error) {
@@ -34,4 +35,8 @@ func (m *ConsultaRepositoryMock) ListarConsultasPorAluno(ctx context.Context, aI
 
 func (m *ConsultaRepositoryMock) DeletarConsulta(ctx context.Context, id string) error {
 	return m.DeletarConsultaFunc(ctx, id)
+}
+
+func (m *ConsultaRepositoryMock) BuscarConsultaPorID(ctx context.Context, id string) (*model.Consulta, error) {
+	return m.BuscarConsultaPorIDFunc(ctx, id)
 }

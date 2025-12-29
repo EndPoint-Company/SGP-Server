@@ -39,4 +39,5 @@ type ConsultaRepository interface {
 	ListarConsultasPorPsicologo(ctx context.Context, psicologoID string, statusFiltro string) ([]*model.Consulta, error)
 	ListarConsultasPorAluno(ctx context.Context, alunoID string) ([]*model.Consulta, error)
 	DeletarConsulta(ctx context.Context, id string) error
+	BuscarConsultaPorID(ctx context.Context, id string) (*model.Consulta, error)
 }
