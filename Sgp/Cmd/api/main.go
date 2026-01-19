@@ -15,14 +15,14 @@ import (
 	firebase "firebase.google.com/go/v4"
 	"firebase.google.com/go/v4/auth"
 	"github.com/joho/godotenv"
-	"github.com/rs/cors" // MODIFICADO: Importação do pacote CORS
+	"github.com/rs/cors"
 	"google.golang.org/api/option"
 )
 
 const is_middleware_on = false
 
 func main() {
-	err := godotenv.Load("/home/marquin/home/servidor-sgp/SGP-Server/Sgp/Cmd/api/.env")
+	err := godotenv.Load(".env")
 	if err != nil {
 		log.Fatalf("Erro ao carregar o arquivo .env: %v", err)
 	}
@@ -30,7 +30,6 @@ func main() {
 	creds := os.Getenv("CREDS")
 
 	//---------------Conexao com o firebase------------------//
-
 	ctx := context.Background()
 	opt := option.WithCredentialsFile(creds)
 	app, err := firebase.NewApp(ctx, nil, opt)
@@ -50,9 +49,7 @@ func main() {
 	}
 	defer client.Close()
 
-
 	resendApiKey := os.Getenv("RESEND_API_KEY")
-	
 
 	emailService := service.NewEmailService(resendApiKey)
 
@@ -65,10 +62,19 @@ func main() {
 	psicologoHandler := handler.NewPsicologoHandler(psicologoRepo)
 	consultaHandler := handler.NewConsultaHandler(consultaRepo, alunoRepo, psicologoRepo, emailService)
 	horarioHandler := handler.NewHorarioDisponivelHandler(horarioRepo)
+	
+	// [!code ++] NOVO HANDLER DE USUÁRIO
+	userHandler := handler.NewUserHandler(alunoRepo, psicologoRepo)
 
 	mux := http.NewServeMux()
-
 	authMiddleware := middleware.NewAuthMiddleware(authClient)
+
+	// Rotas Comuns (sem middleware ou com, dependendo da sua regra de negócio para "descobrir role")
+	// Geralmente o endpoint de Role precisa ser acessível para quem acabou de logar
+	// Se "is_middleware_on" for true, você pode proteger com authMiddleware.Verify
+	
+	// [!code ++] NOVA ROTA
+	mux.HandleFunc("GET /users/{id}/role", userHandler.HandlerGetUserRole)
 
 	if is_middleware_on {
 		mux.Handle("POST /alunos", authMiddleware.Verify(http.HandlerFunc(alunoHandler.HandlerCriarAluno)))
@@ -94,6 +100,7 @@ func main() {
 		mux.HandleFunc("GET /horarios", horarioHandler.HandlerListarHorarios)
 		mux.HandleFunc("DELETE /horarios/{id}", horarioHandler.HandlerDeletarHorario)
 	} else {
+		// Modo Dev (sem Auth)
 		mux.HandleFunc("POST /alunos", alunoHandler.HandlerCriarAluno)
 		mux.HandleFunc("GET /alunos", alunoHandler.HandlerListarAlunos)
 		mux.HandleFunc("GET /alunos/{id}", alunoHandler.HandlerBuscarAlunoPorID)
@@ -120,22 +127,19 @@ func main() {
 		mux.HandleFunc("DELETE /horarios/{id}", horarioHandler.HandlerDeletarHorario)
 	}
 
-	// MODIFICADO: Início da configuração do CORS
 	c := cors.New(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:5173"}, // Permite requisições do seu cliente React
+		AllowedOrigins:   []string{"http://localhost:5173"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Authorization", "Content-Type"},
 		AllowCredentials: true,
 	})
 
-	// Envolve o mux com o handler do CORS
 	handler := c.Handler(mux)
-	// MODIFICADO: Fim da configuração do CORS
 
 	port := ":8080"
 	server := &http.Server{
 		Addr:         port,
-		Handler:      handler, // MODIFICADO: Usa o handler com CORS em vez do 'mux' original
+		Handler:      handler,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  120 * time.Second,
