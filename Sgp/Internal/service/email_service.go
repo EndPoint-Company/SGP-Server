@@ -27,7 +27,7 @@ func (s *EmailService) EnviarNotificacaoAgendamento(emailDestino, nomeAluno, nom
 	`, nomeAluno, nomePsicologo, dataHora)
 
 	params := &resend.SendEmailRequest{
-		From:    "SGP <onboarding@resend.dev>",
+		From:    "SGP <robot@sgp.codes>",
 		To:      []string{emailDestino},
 		Subject: "Confirmação de Agendamento - SGP",
 		Html:    htmlContent,
@@ -53,7 +53,7 @@ func (s *EmailService) EnviarNotificacaoAtualizacaoStatus(emailDestino, nomeAlun
 	`, nomeAluno, novoStatus)
 
 	params := &resend.SendEmailRequest{
-		From:    "SGP <onboarding@resend.dev>",
+		From:    "SGP <robot@sgp.codes>",
 		To:      []string{emailDestino},
 		Subject: fmt.Sprintf("Atualização na Consulta: %s", novoStatus),
 		Html:    htmlContent,
